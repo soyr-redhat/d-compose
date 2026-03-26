@@ -12,30 +12,115 @@ Convert Docker files to Podman-compatible Containerfiles automatically.
 
 ## Installation
 
-### Quick Install (Add to PATH)
-
-1. Add this directory to your PATH by adding to your `~/.zshrc`:
+### Option 1: Clone the repository
 
 ```bash
-export PATH="$PATH:/Users/sbowerma/Code/d-compose"
+git clone https://github.com/soyr-redhat/d-compose.git
+cd d-compose
+chmod +x d-compose
 ```
 
-2. Reload your shell:
+Then add to PATH using one of the methods below for your OS.
+
+### Option 2: Download directly
 
 ```bash
+curl -O https://raw.githubusercontent.com/soyr-redhat/d-compose/main/d-compose
+chmod +x d-compose
+```
+
+---
+
+### Adding to PATH
+
+#### macOS / Linux (bash)
+
+1. Move the script to a location of your choice (or use the cloned directory):
+
+```bash
+# Example: move to ~/bin
+mkdir -p ~/bin
+mv d-compose ~/bin/
+```
+
+2. Add to your PATH by editing `~/.bashrc` (or `~/.bash_profile` on older macOS):
+
+```bash
+echo 'export PATH="$PATH:$HOME/bin"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+#### macOS / Linux (zsh)
+
+1. Move the script to a location of your choice:
+
+```bash
+# Example: move to ~/bin
+mkdir -p ~/bin
+mv d-compose ~/bin/
+```
+
+2. Add to your PATH by editing `~/.zshrc`:
+
+```bash
+echo 'export PATH="$PATH:$HOME/bin"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-3. Verify installation:
+#### Linux (system-wide installation)
 
 ```bash
+# Install for all users (requires sudo)
+sudo mv d-compose /usr/local/bin/
+sudo chmod +x /usr/local/bin/d-compose
+```
+
+#### Windows (PowerShell)
+
+1. Create a directory for your scripts (if it doesn't exist):
+
+```powershell
+New-Item -Path "$env:USERPROFILE\bin" -ItemType Directory -Force
+```
+
+2. Move the script there:
+
+```powershell
+Move-Item d-compose "$env:USERPROFILE\bin\d-compose"
+```
+
+3. Add to your PATH (run PowerShell as Administrator):
+
+```powershell
+# Get current PATH
+$currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
+
+# Add new directory to PATH
+[Environment]::SetEnvironmentVariable(
+    "Path",
+    "$currentPath;$env:USERPROFILE\bin",
+    "User"
+)
+```
+
+4. Restart your terminal and verify:
+
+```powershell
 d-compose --help
 ```
 
-### Alternative: Symlink to local bin
+#### Windows (WSL - Windows Subsystem for Linux)
+
+Follow the Linux instructions above within your WSL environment.
+
+---
+
+### Verify Installation
+
+After adding to PATH, verify it works:
 
 ```bash
-ln -s /Users/sbowerma/Code/d-compose/d-compose /usr/local/bin/d-compose
+d-compose --help
 ```
 
 ## Usage
@@ -63,12 +148,17 @@ d-compose ../4_pillars_demos --dry-run -v
 ## Examples
 
 ```bash
-# Test on the 4_pillars_demos directory
-cd /Users/sbowerma/Code
-d-compose --dry-run 4_pillars_demos/2_inference_vllm
+# Preview changes in current directory
+d-compose --dry-run .
 
-# Apply changes
-d-compose 4_pillars_demos/2_inference_vllm
+# Convert a specific project
+d-compose --dry-run ~/projects/my-app
+
+# Apply changes after preview
+d-compose ~/projects/my-app
+
+# Process entire directory tree with verbose output
+d-compose -v /path/to/monorepo
 ```
 
 ## What gets converted
