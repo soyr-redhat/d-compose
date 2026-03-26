@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+"""
+d-compose: Convert Docker files to Podman-compatible Containerfiles
+"""
+
+import os
+import sys
+import argparse
+import shutil
+from pathlib import Path
+from typing import List, Tuple
+
+
+class DockerToPodmanConverter:
+    def __init__(self, dry_run: bool = False, update_content: bool = True, verbose: bool = False):
+        self.dry_run = dry_run
+        self.update_content = update_content
+        self.verbose = verbose
+        self.changes: List[Tuple[str, str]] = []
+
+    def log(self, message: str, force: bool = False):
+        """Print message if verbose or forced"""
+        if self.verbose or force:
+            print(message)
+
+    def rename_file(self, old_path: Path, new_path: Path) -> bool:
+        """Rename a file, handling conflicts"""
+        if new_path.exists():
+            self.log(f"⚠️  Skipping {old_path} (target {new_path.name} already exists)", force=True)
+            return False
+
+        if self.dry_run:
+            self.log(f"[DRY RUN] Would rename: {old_path} → {new_path.name}", force=True)
+            self.changes.append((str(old_path), str(new_path)))
+            return True
+
+        try:
+            old_path.rename(new_path)
+            self.log(f"✓ Renamed: {old_path} → {new_path.name}", force=True)
+            self.changes.append((str(old_path), str(new_path)))
+            return True
+        except Exception as e:
+            self.log(f"✗ Error renaming {old_path}: {e}", force=True)
+            return False
+
+    def update_file_content(self, file_path: Path) -> bool:
+        """Update Docker references to Podman in file content"""
+        if not self.update_content:
+            return False
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            original_content = content
+
+            # Common replacements
+            replacements = [
+                ('FROM docker.io/', 'FROM '),
+                ('docker build', 'podman build'),
+                ('docker run', 'podman run'),
+                ('docker push', 'podman push'),
+                ('docker pull', 'podman pull'),
+                ('docker-compose', 'podman-compose'),
+            ]
+
+            for old, new in replacements:
+                content = content.replace(old, new)
+
+            if content != original_content:
+                if self.dry_run:
+                    self.log(f"[DRY RUN] Would update content in: {file_path}", force=False)
+                else:
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                    self.log(f"  ↳ Updated content in: {file_path.name}", force=False)
+                return True
+
+        except Exception as e:
+            self.log(f"✗ Error updating content in {file_path}: {e}", force=True)
+
+        return False
+
+    def process_directory(self, directory: Path) -> int:
+        """Process all files in directory recursively"""
+        if not directory.exists():
+            print(f"✗ Directory not found: {directory}")
+            sys.exit(1)
+
+        if not directory.is_dir():
+            print(f"✗ Not a directory: {directory}")
+            sys.exit(1)
+
+        self.log(f"\n🔍 Scanning {directory}...\n", force=True)
+
+        # Find all Dockerfiles and docker-compose files
+        dockerfiles = []
+        compose_files = []
+
+        for root, dirs, files in os.walk(directory):
+            root_path = Path(root)
+
+            # Skip hidden directories and common ignore patterns
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['node_modules', 'venv', '__pycache__']]
+
+            for file in files:
+                file_path = root_path / file
+
+                # Match Dockerfile (with or without extension)
+                if file == 'Dockerfile' or file.startswith('Dockerfile.'):
+                    dockerfiles.append(file_path)
+
+                # Match docker-compose files
+                if file in ['docker-compose.yml', 'docker-compose.yaml']:
+                    compose_files.append(file_path)
+
+        # Process Dockerfiles
+        for dockerfile in dockerfiles:
+            new_name = dockerfile.name.replace('Dockerfile', 'Containerfile')
+            new_path = dockerfile.parent / new_name
+
+            if self.rename_file(dockerfile, new_path):
+                # Update content in the renamed file
+                if not self.dry_run:
+                    self.update_file_content(new_path)
+
+        # Process docker-compose files
+        for compose_file in compose_files:
+            # docker-compose.yml → compose.yml
+            # docker-compose.yaml → compose.yaml
+            new_name = compose_file.name.replace('docker-compose', 'compose')
+            new_path = compose_file.parent / new_name
+
+            if self.rename_file(compose_file, new_path):
+                # Update content in the renamed file
+                if not self.dry_run:
+                    self.update_file_content(new_path)
+
+        return len(self.changes)
+
+    def print_summary(self):
+        """Print summary of changes"""
+        if not self.changes:
+            print("\n✓ No Docker files found to convert.")
+        else:
+            mode = "[DRY RUN] " if self.dry_run else ""
+            print(f"\n{mode}{'='*60}")
+            print(f"{mode}Summary: {len(self.changes)} file(s) converted")
+            print(f"{mode}{'='*60}")
+            if self.dry_run:
+                print("\nRun without --dry-run to apply these changes.")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Convert Docker files to Podman-compatible Containerfiles',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  d-compose .                    # Convert files in current directory
+  d-compose /path/to/project     # Convert files in specific directory
+  d-compose . --dry-run          # Preview changes without applying
+  d-compose . --no-content       # Only rename files, don't update content
+  d-compose . -v                 # Verbose output
+        """
+    )
+
+    parser.add_argument(
+        'directory',
+        nargs='?',
+        default='.',
+        help='Directory to process (default: current directory)'
+    )
+
+    parser.add_argument(
+        '--dry-run', '-n',
+        action='store_true',
+        help='Preview changes without applying them'
+    )
+
+    parser.add_argument(
+        '--no-content',
+        action='store_true',
+        help='Only rename files, do not update content'
+    )
+
+    parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Verbose output'
+    )
+
+    args = parser.parse_args()
+
+    # Convert to absolute path
+    directory = Path(args.directory).resolve()
+
+    # Create converter
+    converter = DockerToPodmanConverter(
+        dry_run=args.dry_run,
+        update_content=not args.no_content,
+        verbose=args.verbose
+    )
+
+    # Process directory
+    num_changes = converter.process_directory(directory)
+
+    # Print summary
+    converter.print_summary()
+
+    sys.exit(0)
+
+
+if __name__ == '__main__':
+    main()
