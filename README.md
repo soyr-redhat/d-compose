@@ -1,13 +1,18 @@
 # d-compose
 
-Convert Docker files to Podman-compatible Containerfiles automatically.
+Convert Docker files to Podman-compatible formats automatically across your entire project.
 
 ## What it does
 
+**By default, converts everything:**
 - Renames `Dockerfile` → `Containerfile`
 - Renames `docker-compose.yml` → `compose.yml`
-- Updates content to replace Docker commands with Podman equivalents
+- Updates Kubernetes/OpenShift YAML manifests
+- Updates CI/CD pipeline files (GitHub Actions, GitLab CI, etc.)
+- Updates shell scripts with Docker commands
+- Updates other YAML files with Docker references
 - Recursively processes entire directory trees
+- Replaces Docker commands with Podman equivalents throughout
 - Skips hidden directories and common ignore patterns (`.git`, `node_modules`, `venv`, etc.)
 
 ## Installation
@@ -126,7 +131,7 @@ d-compose --help
 ## Usage
 
 ```bash
-# Convert files in current directory
+# Convert all Docker files to Podman (recommended - does everything)
 d-compose .
 
 # Convert files in specific directory
@@ -135,30 +140,40 @@ d-compose /path/to/project
 # Preview changes without applying (dry run)
 d-compose . --dry-run
 
-# Only rename files, don't update content
+# Skip specific file types
+d-compose . --skip-k8s          # Skip Kubernetes/OpenShift YAML
+d-compose . --skip-ci           # Skip CI/CD pipelines
+d-compose . --skip-scripts      # Skip shell scripts
+d-compose . --skip-yaml         # Skip other YAML files
+
+# Only rename Dockerfiles, don't update content
 d-compose . --no-content
 
 # Verbose output
 d-compose . -v
 
 # Combine options
-d-compose ../4_pillars_demos --dry-run -v
+d-compose ../my-project --dry-run -v
+d-compose . --skip-k8s --skip-ci --dry-run
 ```
 
 ## Examples
 
 ```bash
-# Preview changes in current directory
+# Preview all changes in current directory (recommended first step)
 d-compose --dry-run .
 
-# Convert a specific project
-d-compose --dry-run ~/projects/my-app
-
-# Apply changes after preview
+# Convert everything in a project (Dockerfiles, K8s, CI/CD, scripts, YAML)
 d-compose ~/projects/my-app
 
-# Process entire directory tree with verbose output
+# Convert only Dockerfiles and compose files, skip everything else
+d-compose . --skip-k8s --skip-ci --skip-scripts --skip-yaml
+
+# Convert a monorepo with verbose output to see all changes
 d-compose -v /path/to/monorepo
+
+# Preview K8s manifest changes without touching CI/CD
+d-compose --dry-run --skip-ci /path/to/k8s-project
 ```
 
 ## What gets converted
@@ -166,16 +181,42 @@ d-compose -v /path/to/monorepo
 ### File renames:
 - `Dockerfile` → `Containerfile`
 - `Dockerfile.dev` → `Containerfile.dev`
+- `Dockerfile.*` → `Containerfile.*`
 - `docker-compose.yml` → `compose.yml`
 - `docker-compose.yaml` → `compose.yaml`
 
-### Content replacements:
+### Content replacements (across all file types):
+**Docker commands:**
 - `docker build` → `podman build`
 - `docker run` → `podman run`
 - `docker push` → `podman push`
 - `docker pull` → `podman pull`
+- `docker tag` → `podman tag`
+- `docker login` → `podman login`
+- `docker images` → `podman images`
+- `docker ps` → `podman ps`
+- `docker exec` → `podman exec`
+- `docker logs` → `podman logs`
+- `docker stop/start/rm/rmi` → `podman stop/start/rm/rmi`
 - `docker-compose` → `podman-compose`
+
+**Image references:**
 - `FROM docker.io/` → `FROM `
+- `image: docker.io/` → `image: `
+
+**Kubernetes/OpenShift specific:**
+- `/var/run/docker.sock` → `/run/podman/podman.sock`
+
+### Files processed:
+**Always processed:**
+- Dockerfiles (any name matching `Dockerfile` or `Dockerfile.*`)
+- docker-compose files (`docker-compose.yml`, `docker-compose.yaml`)
+
+**Processed by default (use --skip flags to exclude):**
+- **Kubernetes/OpenShift:** Deployments, Services, Pods, ConfigMaps, Routes, BuildConfigs, etc.
+- **CI/CD pipelines:** `.github/workflows/*.yml`, `.gitlab-ci.yml`, Jenkins files, CircleCI configs
+- **Shell scripts:** Any `.sh` files
+- **Other YAML:** Any `.yml` or `.yaml` files with Docker references
 
 ## Safety
 

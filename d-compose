@@ -8,42 +8,102 @@ import sys
 import argparse
 import shutil
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Set
 
 
 class DockerToPodmanConverter:
-    def __init__(self, dry_run: bool = False, update_content: bool = True, verbose: bool = False):
+    def __init__(self, dry_run: bool = False, update_content: bool = True, verbose: bool = False,
+                 skip_k8s: bool = False, skip_ci: bool = False, skip_scripts: bool = False,
+                 skip_yaml: bool = False):
         self.dry_run = dry_run
         self.update_content = update_content
         self.verbose = verbose
-        self.changes: List[Tuple[str, str]] = []
+        self.skip_k8s = skip_k8s
+        self.skip_ci = skip_ci
+        self.skip_scripts = skip_scripts
+        self.skip_yaml = skip_yaml
+        self.changes: List[Tuple[str, str, str]] = []  # (file_path, change_type, description)
+        self.stats: Dict[str, int] = {
+            'dockerfiles': 0,
+            'compose': 0,
+            'k8s': 0,
+            'ci': 0,
+            'scripts': 0,
+            'yaml': 0
+        }
 
     def log(self, message: str, force: bool = False):
         """Print message if verbose or forced"""
         if self.verbose or force:
             print(message)
 
-    def rename_file(self, old_path: Path, new_path: Path) -> bool:
+    def rename_file(self, old_path: Path, new_path: Path, file_type: str) -> bool:
         """Rename a file, handling conflicts"""
         if new_path.exists():
-            self.log(f"⚠️  Skipping {old_path} (target {new_path.name} already exists)", force=True)
+            self.log(f"Skipping {old_path} (target {new_path.name} already exists)", force=True)
             return False
 
         if self.dry_run:
             self.log(f"[DRY RUN] Would rename: {old_path} → {new_path.name}", force=True)
-            self.changes.append((str(old_path), str(new_path)))
+            self.changes.append((str(old_path), 'rename', f"{old_path.name} → {new_path.name}"))
             return True
 
         try:
             old_path.rename(new_path)
-            self.log(f"✓ Renamed: {old_path} → {new_path.name}", force=True)
-            self.changes.append((str(old_path), str(new_path)))
+            self.log(f"Renamed: {old_path} → {new_path.name}", force=True)
+            self.changes.append((str(old_path), 'rename', f"{old_path.name} → {new_path.name}"))
+            self.stats[file_type] += 1
             return True
         except Exception as e:
-            self.log(f"✗ Error renaming {old_path}: {e}", force=True)
+            self.log(f"Error renaming {old_path}: {e}", force=True)
             return False
 
-    def update_file_content(self, file_path: Path) -> bool:
+    def get_replacements(self, file_type: str) -> List[Tuple[str, str]]:
+        """Get appropriate replacements based on file type"""
+        # Common replacements for all files
+        common = [
+            ('docker build', 'podman build'),
+            ('docker run', 'podman run'),
+            ('docker push', 'podman push'),
+            ('docker pull', 'podman pull'),
+            ('docker tag', 'podman tag'),
+            ('docker login', 'podman login'),
+            ('docker logout', 'podman logout'),
+            ('docker images', 'podman images'),
+            ('docker ps', 'podman ps'),
+            ('docker exec', 'podman exec'),
+            ('docker logs', 'podman logs'),
+            ('docker stop', 'podman stop'),
+            ('docker start', 'podman start'),
+            ('docker rm', 'podman rm'),
+            ('docker rmi', 'podman rmi'),
+            ('docker-compose', 'podman-compose'),
+            ('FROM docker.io/', 'FROM '),
+            ('image: docker.io/', 'image: '),
+            ('- docker.io/', '- '),
+        ]
+
+        # K8s/OpenShift specific
+        k8s_replacements = [
+            ('/var/run/docker.sock', '/run/podman/podman.sock'),
+            ('var/run/docker.sock', 'run/podman/podman.sock'),
+            ('dockersockPath', 'podmanSocketPath'),
+        ]
+
+        # CI/CD specific
+        ci_replacements = [
+            ('uses: docker://', 'uses: '),
+            ('image: docker:', 'image: '),
+        ]
+
+        if file_type in ['k8s', 'yaml']:
+            return common + k8s_replacements + ci_replacements
+        elif file_type == 'ci':
+            return common + ci_replacements
+        else:
+            return common
+
+    def update_file_content(self, file_path: Path, file_type: str) -> bool:
         """Update Docker references to Podman in file content"""
         if not self.update_content:
             return False
@@ -53,16 +113,7 @@ class DockerToPodmanConverter:
                 content = f.read()
 
             original_content = content
-
-            # Common replacements
-            replacements = [
-                ('FROM docker.io/', 'FROM '),
-                ('docker build', 'podman build'),
-                ('docker run', 'podman run'),
-                ('docker push', 'podman push'),
-                ('docker pull', 'podman pull'),
-                ('docker-compose', 'podman-compose'),
-            ]
+            replacements = self.get_replacements(file_type)
 
             for old, new in replacements:
                 content = content.replace(old, new)
@@ -70,38 +121,99 @@ class DockerToPodmanConverter:
             if content != original_content:
                 if self.dry_run:
                     self.log(f"[DRY RUN] Would update content in: {file_path}", force=False)
+                    self.changes.append((str(file_path), 'content', f"Updated {file_type} file"))
                 else:
                     with open(file_path, 'w', encoding='utf-8') as f:
                         f.write(content)
                     self.log(f"  ↳ Updated content in: {file_path.name}", force=False)
+                    self.changes.append((str(file_path), 'content', f"Updated {file_type} file"))
+
+                self.stats[file_type] += 1
                 return True
 
         except Exception as e:
-            self.log(f"✗ Error updating content in {file_path}: {e}", force=True)
+            self.log(f"Error updating content in {file_path}: {e}", force=True)
+
+        return False
+
+    def is_k8s_yaml(self, file_path: Path) -> bool:
+        """Check if a YAML file is a Kubernetes/OpenShift manifest"""
+        k8s_patterns = [
+            'deployment', 'service', 'pod', 'configmap', 'secret',
+            'ingress', 'statefulset', 'daemonset', 'job', 'cronjob',
+            'persistentvolume', 'namespace', 'route', 'buildconfig',
+            'deploymentconfig', 'imagestream'
+        ]
+        filename_lower = file_path.name.lower()
+
+        # Check if filename contains K8s/OpenShift resource names
+        if any(pattern in filename_lower for pattern in k8s_patterns):
+            return True
+
+        # Check if in k8s/kube/openshift directory
+        path_lower = str(file_path).lower()
+        if any(dir_name in path_lower for dir_name in ['/k8s/', '/kube/', '/kubernetes/', '/openshift/', '/manifests/']):
+            return True
+
+        # Check file content for K8s API version markers
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                first_lines = ''.join(f.readline() for _ in range(10))
+                if 'apiVersion:' in first_lines or 'kind:' in first_lines:
+                    return True
+        except:
+            pass
+
+        return False
+
+    def is_ci_yaml(self, file_path: Path) -> bool:
+        """Check if a YAML file is a CI/CD pipeline"""
+        ci_files = {
+            '.gitlab-ci.yml', '.travis.yml', 'azure-pipelines.yml',
+            'buildkite.yml', '.circleci/config.yml', 'cloudbuild.yaml',
+            'cloudbuild.yml'
+        }
+
+        # Check specific CI filenames
+        if file_path.name in ci_files:
+            return True
+
+        # Check if in .github/workflows
+        if '.github/workflows' in str(file_path):
+            return True
+
+        # Check if in jenkins/ci/pipeline directories
+        path_lower = str(file_path).lower()
+        if any(dir_name in path_lower for dir_name in ['/jenkins/', '/ci/', '/pipeline/', '/.circleci/']):
+            return True
 
         return False
 
     def process_directory(self, directory: Path) -> int:
         """Process all files in directory recursively"""
         if not directory.exists():
-            print(f"✗ Directory not found: {directory}")
+            print(f"Directory not found: {directory}")
             sys.exit(1)
 
         if not directory.is_dir():
-            print(f"✗ Not a directory: {directory}")
+            print(f"Not a directory: {directory}")
             sys.exit(1)
 
-        self.log(f"\n🔍 Scanning {directory}...\n", force=True)
+        self.log(f"\nScanning {directory}...\n", force=True)
 
-        # Find all Dockerfiles and docker-compose files
+        # Collect files by type
         dockerfiles = []
         compose_files = []
+        k8s_files = []
+        ci_files = []
+        other_yaml_files = []
+        shell_scripts = []
 
         for root, dirs, files in os.walk(directory):
             root_path = Path(root)
 
             # Skip hidden directories and common ignore patterns
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['node_modules', 'venv', '__pycache__']]
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['node_modules', 'venv', '__pycache__', 'vendor', 'target', 'dist', 'build']]
 
             for file in files:
                 file_path = root_path / file
@@ -111,57 +223,129 @@ class DockerToPodmanConverter:
                     dockerfiles.append(file_path)
 
                 # Match docker-compose files
-                if file in ['docker-compose.yml', 'docker-compose.yaml']:
+                elif file in ['docker-compose.yml', 'docker-compose.yaml']:
                     compose_files.append(file_path)
 
+                # Match shell scripts
+                elif file.endswith('.sh') and not self.skip_scripts:
+                    shell_scripts.append(file_path)
+
+                # Match YAML files
+                elif file.endswith(('.yml', '.yaml')):
+                    if not self.skip_k8s and self.is_k8s_yaml(file_path):
+                        k8s_files.append(file_path)
+                    elif not self.skip_ci and self.is_ci_yaml(file_path):
+                        ci_files.append(file_path)
+                    elif not self.skip_yaml:
+                        other_yaml_files.append(file_path)
+
         # Process Dockerfiles
+        self.log("Processing Dockerfiles...", force=True)
         for dockerfile in dockerfiles:
             new_name = dockerfile.name.replace('Dockerfile', 'Containerfile')
             new_path = dockerfile.parent / new_name
 
-            if self.rename_file(dockerfile, new_path):
+            if self.rename_file(dockerfile, new_path, 'dockerfiles'):
                 # Update content in the renamed file
                 if not self.dry_run:
-                    self.update_file_content(new_path)
+                    self.update_file_content(new_path, 'dockerfiles')
+                else:
+                    self.update_file_content(dockerfile, 'dockerfiles')
 
         # Process docker-compose files
+        self.log("Processing Compose files...", force=True)
         for compose_file in compose_files:
-            # docker-compose.yml → compose.yml
-            # docker-compose.yaml → compose.yaml
             new_name = compose_file.name.replace('docker-compose', 'compose')
             new_path = compose_file.parent / new_name
 
-            if self.rename_file(compose_file, new_path):
+            if self.rename_file(compose_file, new_path, 'compose'):
                 # Update content in the renamed file
                 if not self.dry_run:
-                    self.update_file_content(new_path)
+                    self.update_file_content(new_path, 'compose')
+                else:
+                    self.update_file_content(compose_file, 'compose')
+
+        # Process K8s/OpenShift YAML files
+        if k8s_files and not self.skip_k8s:
+            self.log("Processing Kubernetes/OpenShift manifests...", force=True)
+            for k8s_file in k8s_files:
+                self.update_file_content(k8s_file, 'k8s')
+
+        # Process CI/CD pipeline files
+        if ci_files and not self.skip_ci:
+            self.log("Processing CI/CD pipelines...", force=True)
+            for ci_file in ci_files:
+                self.update_file_content(ci_file, 'ci')
+
+        # Process other YAML files
+        if other_yaml_files and not self.skip_yaml:
+            self.log("Processing other YAML files...", force=True)
+            for yaml_file in other_yaml_files:
+                self.update_file_content(yaml_file, 'yaml')
+
+        # Process shell scripts
+        if shell_scripts and not self.skip_scripts:
+            self.log("Processing shell scripts...", force=True)
+            for script in shell_scripts:
+                self.update_file_content(script, 'scripts')
 
         return len(self.changes)
 
     def print_summary(self):
         """Print summary of changes"""
         if not self.changes:
-            print("\n✓ No Docker files found to convert.")
+            print("\nNo Docker files found to convert.")
         else:
             mode = "[DRY RUN] " if self.dry_run else ""
             print(f"\n{mode}{'='*60}")
-            print(f"{mode}Summary: {len(self.changes)} file(s) converted")
+            print(f"{mode}Summary: {len(self.changes)} change(s) made")
+            print(f"{mode}{'='*60}\n")
+
+            # Print stats by category
+            if self.stats['dockerfiles'] > 0:
+                print(f"{mode}  Dockerfiles: {self.stats['dockerfiles']}")
+            if self.stats['compose'] > 0:
+                print(f"{mode}  Compose files: {self.stats['compose']}")
+            if self.stats['k8s'] > 0:
+                print(f"{mode}  Kubernetes/OpenShift: {self.stats['k8s']}")
+            if self.stats['ci'] > 0:
+                print(f"{mode}  CI/CD pipelines: {self.stats['ci']}")
+            if self.stats['yaml'] > 0:
+                print(f"{mode}  Other YAML: {self.stats['yaml']}")
+            if self.stats['scripts'] > 0:
+                print(f"{mode}  Shell scripts: {self.stats['scripts']}")
+
             print(f"{mode}{'='*60}")
+
             if self.dry_run:
                 print("\nRun without --dry-run to apply these changes.")
+            else:
+                print("\nConversion complete!")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Convert Docker files to Podman-compatible Containerfiles',
+        description='Convert Docker files to Podman-compatible formats',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  d-compose .                    # Convert files in current directory
-  d-compose /path/to/project     # Convert files in specific directory
-  d-compose . --dry-run          # Preview changes without applying
-  d-compose . --no-content       # Only rename files, don't update content
-  d-compose . -v                 # Verbose output
+  d-compose .                       # Convert all Docker files to Podman
+  d-compose /path/to/project        # Convert files in specific directory
+  d-compose . --dry-run             # Preview changes without applying
+  d-compose . --skip-k8s            # Skip Kubernetes/OpenShift YAML files
+  d-compose . --skip-ci             # Skip CI/CD pipeline files
+  d-compose . --skip-scripts        # Skip shell scripts
+  d-compose . -v                    # Verbose output
+
+By default, processes:
+  - Dockerfiles → Containerfiles
+  - docker-compose.yml → compose.yml
+  - Kubernetes/OpenShift manifests
+  - CI/CD pipeline files (GitHub Actions, GitLab CI, etc.)
+  - Shell scripts with Docker commands
+  - Other YAML files with Docker references
+
+Use --skip-* flags to exclude specific file types.
         """
     )
 
@@ -185,6 +369,30 @@ Examples:
     )
 
     parser.add_argument(
+        '--skip-k8s',
+        action='store_true',
+        help='Skip Kubernetes/OpenShift YAML files'
+    )
+
+    parser.add_argument(
+        '--skip-ci',
+        action='store_true',
+        help='Skip CI/CD pipeline files'
+    )
+
+    parser.add_argument(
+        '--skip-scripts',
+        action='store_true',
+        help='Skip shell scripts'
+    )
+
+    parser.add_argument(
+        '--skip-yaml',
+        action='store_true',
+        help='Skip other YAML files (not K8s or CI/CD)'
+    )
+
+    parser.add_argument(
         '--verbose', '-v',
         action='store_true',
         help='Verbose output'
@@ -199,7 +407,11 @@ Examples:
     converter = DockerToPodmanConverter(
         dry_run=args.dry_run,
         update_content=not args.no_content,
-        verbose=args.verbose
+        verbose=args.verbose,
+        skip_k8s=args.skip_k8s,
+        skip_ci=args.skip_ci,
+        skip_scripts=args.skip_scripts,
+        skip_yaml=args.skip_yaml
     )
 
     # Process directory
