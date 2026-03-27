@@ -60,7 +60,7 @@ class DockerToPodmanConverter:
 
     def get_replacements(self, file_type: str) -> List[Tuple[str, str]]:
         """Get appropriate replacements based on file type"""
-        # Common replacements for all files
+        # Common replacements for all files - only safe command replacements
         common = [
             ('docker build', 'podman build'),
             ('docker run', 'podman run'),
@@ -78,28 +78,17 @@ class DockerToPodmanConverter:
             ('docker rm', 'podman rm'),
             ('docker rmi', 'podman rmi'),
             ('docker-compose', 'podman-compose'),
-            ('FROM docker.io/', 'FROM '),
-            ('image: docker.io/', 'image: '),
-            ('- docker.io/', '- '),
         ]
 
-        # K8s/OpenShift specific
-        k8s_replacements = [
+        # Socket path replacements - safe and necessary for podman
+        socket_replacements = [
             ('/var/run/docker.sock', '/run/podman/podman.sock'),
             ('var/run/docker.sock', 'run/podman/podman.sock'),
-            ('dockersockPath', 'podmanSocketPath'),
         ]
 
-        # CI/CD specific
-        ci_replacements = [
-            ('uses: docker://', 'uses: '),
-            ('image: docker:', 'image: '),
-        ]
-
-        if file_type in ['k8s', 'yaml']:
-            return common + k8s_replacements + ci_replacements
-        elif file_type == 'ci':
-            return common + ci_replacements
+        # All file types get socket replacements if they might contain them
+        if file_type in ['k8s', 'yaml', 'compose', 'scripts', 'dockerfiles']:
+            return common + socket_replacements
         else:
             return common
 
@@ -212,8 +201,8 @@ class DockerToPodmanConverter:
         for root, dirs, files in os.walk(directory):
             root_path = Path(root)
 
-            # Skip hidden directories and common ignore patterns (but keep .github for CI/CD)
-            dirs[:] = [d for d in dirs if (d == '.github' or not d.startswith('.')) and d not in ['node_modules', 'venv', '__pycache__', 'vendor', 'target', 'dist', 'build']]
+            # Skip hidden directories and common ignore patterns (but keep .github and .circleci for CI/CD)
+            dirs[:] = [d for d in dirs if (d in ['.github', '.circleci', '.gitlab'] or not d.startswith('.')) and d not in ['node_modules', 'venv', '__pycache__', 'vendor', 'target', 'dist', 'build']]
 
             for file in files:
                 file_path = root_path / file

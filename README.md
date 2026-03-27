@@ -186,13 +186,14 @@ dcomp --dry-run --skip-ci /path/to/k8s-project
 - `docker-compose.yaml` → `compose.yaml`
 
 ### Content replacements (across all file types):
-**Docker commands:**
+**Docker commands (safe, functional replacements):**
 - `docker build` → `podman build`
 - `docker run` → `podman run`
 - `docker push` → `podman push`
 - `docker pull` → `podman pull`
 - `docker tag` → `podman tag`
 - `docker login` → `podman login`
+- `docker logout` → `podman logout`
 - `docker images` → `podman images`
 - `docker ps` → `podman ps`
 - `docker exec` → `podman exec`
@@ -200,12 +201,14 @@ dcomp --dry-run --skip-ci /path/to/k8s-project
 - `docker stop/start/rm/rmi` → `podman stop/start/rm/rmi`
 - `docker-compose` → `podman-compose`
 
-**Image references:**
-- `FROM docker.io/` → `FROM `
-- `image: docker.io/` → `image: `
-
-**Kubernetes/OpenShift specific:**
+**Socket paths (required for Podman):**
 - `/var/run/docker.sock` → `/run/podman/podman.sock`
+- `var/run/docker.sock` → `run/podman/podman.sock`
+
+**What we DON'T change:**
+- Registry prefixes (`docker.io/`) are kept as-is for safety
+- Image names and tags remain unchanged
+- Only commands are converted, not image references
 
 ### Files processed:
 **Always processed:**
