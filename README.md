@@ -20,9 +20,9 @@ Convert Docker files to Podman-compatible formats automatically across your enti
 ### Option 1: Clone the repository
 
 ```bash
-git clone https://github.com/soyr-redhat/d-compose.git
+git clone https://github.com/soyr-redhat/dcomp.git
 cd d-compose
-chmod +x d-compose
+chmod +x dcomp
 ```
 
 Then add to PATH using one of the methods below for your OS.
@@ -30,8 +30,8 @@ Then add to PATH using one of the methods below for your OS.
 ### Option 2: Download directly
 
 ```bash
-curl -O https://raw.githubusercontent.com/soyr-redhat/d-compose/main/d-compose
-chmod +x d-compose
+curl -O https://raw.githubusercontent.com/soyr-redhat/dcomp/main/dcomp
+chmod +x dcomp
 ```
 
 ---
@@ -45,7 +45,7 @@ chmod +x d-compose
 ```bash
 # Example: move to ~/bin
 mkdir -p ~/bin
-mv d-compose ~/bin/
+mv dcomp ~/bin/
 ```
 
 2. Add to your PATH by editing `~/.bashrc` (or `~/.bash_profile` on older macOS):
@@ -62,7 +62,7 @@ source ~/.bashrc
 ```bash
 # Example: move to ~/bin
 mkdir -p ~/bin
-mv d-compose ~/bin/
+mv dcomp ~/bin/
 ```
 
 2. Add to your PATH by editing `~/.zshrc`:
@@ -76,8 +76,8 @@ source ~/.zshrc
 
 ```bash
 # Install for all users (requires sudo)
-sudo mv d-compose /usr/local/bin/
-sudo chmod +x /usr/local/bin/d-compose
+sudo mv dcomp /usr/local/bin/
+sudo chmod +x /usr/local/bin/dcomp
 ```
 
 #### Windows (PowerShell)
@@ -110,8 +110,8 @@ $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
 
 4. Restart your terminal and verify:
 
-```powershell
-d-compose --help
+```bash
+dcomp --help
 ```
 
 #### Windows (WSL - Windows Subsystem for Linux)
@@ -125,55 +125,55 @@ Follow the Linux instructions above within your WSL environment.
 After adding to PATH, verify it works:
 
 ```bash
-d-compose --help
+dcomp --help
 ```
 
 ## Usage
 
 ```bash
 # Convert all Docker files to Podman (recommended - does everything)
-d-compose .
+dcomp .
 
 # Convert files in specific directory
-d-compose /path/to/project
+dcomp /path/to/project
 
 # Preview changes without applying (dry run)
-d-compose . --dry-run
+dcomp . --dry-run
 
 # Skip specific file types
-d-compose . --skip-k8s          # Skip Kubernetes/OpenShift YAML
-d-compose . --skip-ci           # Skip CI/CD pipelines
-d-compose . --skip-scripts      # Skip shell scripts
-d-compose . --skip-yaml         # Skip other YAML files
+dcomp . --skip-k8s          # Skip Kubernetes/OpenShift YAML
+dcomp . --skip-ci           # Skip CI/CD pipelines
+dcomp . --skip-scripts      # Skip shell scripts
+dcomp . --skip-yaml         # Skip other YAML files
 
 # Only rename Dockerfiles, don't update content
-d-compose . --no-content
+dcomp . --no-content
 
 # Verbose output
-d-compose . -v
+dcomp . -v
 
 # Combine options
-d-compose ../my-project --dry-run -v
-d-compose . --skip-k8s --skip-ci --dry-run
+dcomp ../my-project --dry-run -v
+dcomp . --skip-k8s --skip-ci --dry-run
 ```
 
 ## Examples
 
 ```bash
 # Preview all changes in current directory (recommended first step)
-d-compose --dry-run .
+dcomp --dry-run .
 
 # Convert everything in a project (Dockerfiles, K8s, CI/CD, scripts, YAML)
 d-compose ~/projects/my-app
 
 # Convert only Dockerfiles and compose files, skip everything else
-d-compose . --skip-k8s --skip-ci --skip-scripts --skip-yaml
+dcomp . --skip-k8s --skip-ci --skip-scripts --skip-yaml
 
 # Convert a monorepo with verbose output to see all changes
-d-compose -v /path/to/monorepo
+dcomp -v /path/to/monorepo
 
 # Preview K8s manifest changes without touching CI/CD
-d-compose --dry-run --skip-ci /path/to/k8s-project
+dcomp --dry-run --skip-ci /path/to/k8s-project
 ```
 
 ## What gets converted

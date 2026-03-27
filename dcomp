@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-d-compose: Convert Docker files to Podman-compatible Containerfiles
+dcomp: Convert Docker files to Podman-compatible Containerfiles
 """
 
 import os
@@ -329,13 +329,13 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  d-compose .                       # Convert all Docker files to Podman
-  d-compose /path/to/project        # Convert files in specific directory
-  d-compose . --dry-run             # Preview changes without applying
-  d-compose . --skip-k8s            # Skip Kubernetes/OpenShift YAML files
-  d-compose . --skip-ci             # Skip CI/CD pipeline files
-  d-compose . --skip-scripts        # Skip shell scripts
-  d-compose . -v                    # Verbose output
+  dcomp .                       # Convert all Docker files to Podman
+  dcomp /path/to/project        # Convert files in specific directory
+  dcomp . --dry-run             # Preview changes without applying
+  dcomp . --skip-k8s            # Skip Kubernetes/OpenShift YAML files
+  dcomp . --skip-ci             # Skip CI/CD pipeline files
+  dcomp . --skip-scripts        # Skip shell scripts
+  dcomp . -v                    # Verbose output
 
 By default, processes:
   - Dockerfiles → Containerfiles
