@@ -91,7 +91,7 @@ New-Item -Path "$env:USERPROFILE\bin" -ItemType Directory -Force
 2. Move the script there:
 
 ```powershell
-Move-Item d-compose "$env:USERPROFILE\bin\d-compose"
+Move-Item dcomp "$env:USERPROFILE\bin\dcomp"
 ```
 
 3. Add to your PATH (run PowerShell as Administrator):
@@ -164,7 +164,7 @@ dcomp . --skip-k8s --skip-ci --dry-run
 dcomp --dry-run .
 
 # Convert everything in a project (Dockerfiles, K8s, CI/CD, scripts, YAML)
-d-compose ~/projects/my-app
+dcomp ~/projects/my-app
 
 # Convert only Dockerfiles and compose files, skip everything else
 dcomp . --skip-k8s --skip-ci --skip-scripts --skip-yaml
