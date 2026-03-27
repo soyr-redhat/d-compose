@@ -212,8 +212,8 @@ class DockerToPodmanConverter:
         for root, dirs, files in os.walk(directory):
             root_path = Path(root)
 
-            # Skip hidden directories and common ignore patterns
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ['node_modules', 'venv', '__pycache__', 'vendor', 'target', 'dist', 'build']]
+            # Skip hidden directories and common ignore patterns (but keep .github for CI/CD)
+            dirs[:] = [d for d in dirs if (d == '.github' or not d.startswith('.')) and d not in ['node_modules', 'venv', '__pycache__', 'vendor', 'target', 'dist', 'build']]
 
             for file in files:
                 file_path = root_path / file
